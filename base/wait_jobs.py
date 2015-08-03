@@ -9,12 +9,13 @@ import uuid
 from datetime import datetime
 import json
 import hashlib
+from time import time
 
 import poliglo
 from poliglo.utils import to_json
 
 POLIGLO_SERVER_URL = os.environ.get('POLIGLO_SERVER_URL')
-WORKER_NAME = 'wait_jobs'
+WORKER_TYPE = 'wait_jobs'
 
 def check_if_waiting_is_done(connection, script_id, process_id, waiting_workers_ids):
     total_jobs_keys = [
@@ -62,7 +63,7 @@ def process(specific_info, data, *args):
     waiting_queue_name = get_waiting_queue_name(
         data['process']['id'], data['process']['worker_id'], inputs['wait_jobs_from']
     )
-    connection.lpush(waiting_queue_name, to_json(data))
+    connection.zadd(waiting_queue_name, time(), to_json(data))
     return []
 
 def get_waiting_workers(worker_scripts):
@@ -84,8 +85,8 @@ def wait_is_done(connection, worker_scripts, script_id, process_id, process_name
         process_id, worker_id, waiting_workers_ids
     )
     worker = worker_scripts.get(script_id, {}).get(worker_id, {})
-    for i, output_worker_id in enumerate(worker.get('outputs', [])):
-        output_worker_type = worker.get('__outputs_types', [])[i]
+    for i, output_worker_id in enumerate(worker.get('next_workers', [])):
+        output_worker_type = worker.get('__next_workers_types', [])[i]
         data = {'__read_from_queue': waiting_queue_name}
         poliglo.start_process(
             connection, script_id, output_worker_type,
@@ -93,7 +94,7 @@ def wait_is_done(connection, worker_scripts, script_id, process_id, process_name
         )
 
 def main():
-    worker_scripts, connection = poliglo.prepare_worker(POLIGLO_SERVER_URL, WORKER_NAME)
+    worker_scripts, connection = poliglo.prepare_worker(POLIGLO_SERVER_URL, WORKER_TYPE)
     script_waiting_workers, all_waiting_workers = get_waiting_workers(worker_scripts)
     # TODO: Move to redis
     already_done_signatures = []
@@ -128,7 +129,7 @@ def main():
         else:
             found_finalized = False
         if not found_finalized:
-            queue_message = connection.brpop([poliglo.REDIS_KEY_QUEUE % WORKER_NAME,], timeout_wait)
+            queue_message = connection.brpop([poliglo.REDIS_KEY_QUEUE % WORKER_TYPE,], timeout_wait)
             if queue_message is not None:
                 poliglo.default_main_inside(
                     connection, worker_scripts, queue_message, process, {'connection': connection}
@@ -192,7 +193,7 @@ class TestWaitJobs(TestCase):
                         "numbers_range": [0, 10],
                         "sleep": 0
                     },
-                    "outputs": ["filter_1"]
+                    "next_workers": ["filter_1"]
                 },
                 {
                     "worker_type": "filter",
@@ -200,7 +201,7 @@ class TestWaitJobs(TestCase):
                     "default_inputs": {
                         "min": 1000
                     },
-                    "outputs": ["wait_jobs_1"]
+                    "next_workers": ["wait_jobs_1"]
                 },
                 {
                     "worker_type": "wait_jobs",
@@ -208,12 +209,12 @@ class TestWaitJobs(TestCase):
                     "default_inputs": {
                         "wait_jobs_from": ["generate_numbers_1", "filter_1", "wait_jobs_1"]
                     },
-                    "outputs": ["count_numbers_1"]
+                    "next_workers": ["count_numbers_1"]
                 },
                 {
                     "id": "count_numbers_1",
                     "worker_type": "count_numbers",
-                    "outputs": []
+                    "next_workers": []
                 }
             ]
         }
@@ -251,7 +252,7 @@ import poliglo
 import os
 
 POLIGLO_SERVER_URL = os.environ.get('POLIGLO_SERVER_URL')
-WORKER_NAME = 'generate_numbers'
+WORKER_TYPE = 'generate_numbers'
 
 def process(specific_info, data, *args):
     inputs = poliglo.get_inputs(data, specific_info)
@@ -262,7 +263,7 @@ def process(specific_info, data, *args):
         time.sleep(sleep_time)
         yield {'number': i}
 
-poliglo.default_main(POLIGLO_SERVER_URL, WORKER_NAME, process)
+poliglo.default_main(POLIGLO_SERVER_URL, WORKER_TYPE, process)
 """)
 
         #WORKER filter
@@ -271,7 +272,7 @@ import poliglo
 import os
 
 POLIGLO_SERVER_URL = os.environ.get('POLIGLO_SERVER_URL')
-WORKER_NAME = 'filter'
+WORKER_TYPE = 'filter'
 
 def process(specific_info, data, *args):
     inputs = poliglo.get_inputs(data, specific_info)
@@ -280,7 +281,7 @@ def process(specific_info, data, *args):
         return [inputs,]
     return []
 
-poliglo.default_main(POLIGLO_SERVER_URL, WORKER_NAME, process)
+poliglo.default_main(POLIGLO_SERVER_URL, WORKER_TYPE, process)
 """)
 
         #WORKER wait_jobs
@@ -292,7 +293,7 @@ import poliglo
 import os
 
 POLIGLO_SERVER_URL = os.environ.get('POLIGLO_SERVER_URL')
-WORKER_NAME = 'count_numbers'
+WORKER_TYPE = 'count_numbers'
 
 def process(specific_info, data, *args):
     connection = args[0].get('connection')
@@ -310,7 +311,7 @@ def process(specific_info, data, *args):
 
 config = poliglo.get_config(POLIGLO_SERVER_URL, 'all')
 connection = poliglo.get_connection(config)
-poliglo.default_main(POLIGLO_SERVER_URL, WORKER_NAME, process, {'connection': connection})
+poliglo.default_main(POLIGLO_SERVER_URL, WORKER_TYPE, process, {'connection': connection})
 """)
 
     @classmethod
@@ -318,7 +319,7 @@ poliglo.default_main(POLIGLO_SERVER_URL, WORKER_NAME, process, {'connection': co
         cls._setup_workers_files()
         isolated_env = os.environ.copy()
         isolated_env['WORKERS_PATHS'] = cls.workers_path
-        isolated_env['POLIGLO_SERVER_URL'] = POLIGLO_SERVER_URL
+        isolated_env['POLIGLO_SERVER_URL'] = cls.config.get('all').get('POLIGLO_SERVER_URL')
         project_dir = os.path.abspath(
             os.path.join(
                 os.path.dirname(__file__),
