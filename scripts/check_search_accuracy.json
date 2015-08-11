@@ -1,0 +1,45 @@
+{
+    "id": "check_search_accuracy",
+    "name": "Check search accuracy",
+    "start_worker_id": "get_epistemonikos_data_1",
+    "group": "epistemonikos",
+    "workers": [
+        {
+            "id": "get_epistemonikos_data_1",
+            "worker_type": "get_epistemonikos_data",
+            "default_inputs": {
+                "data_filter": {},
+                "collection": "documents",
+                "fields": ["id", "languages.en.title", "languages.en.abstract"],
+                "names": ["document_id", "title", "abstract"]
+            },
+            "next_workers": ["find_phrases_in_documents_1"]
+        },
+        {
+            "id": "find_phrases_in_documents_1",
+            "worker_type": "find_phrases_in_documents",
+            "default_inputs": {
+                "where_to_find": ["title", "abstract"]
+            },
+            "before": {
+                "select_inputs": {
+                    "to_find_phrases": "workers_output.initial.to_find_phrases"
+                }
+            },
+            "next_workers": ["wait_jobs_1"]
+        },
+        {
+            "id": "wait_jobs_1",
+            "worker_type": "wait_jobs",
+            "default_inputs": {
+                "wait_jobs_from": ["get_epistemonikos_data_1", "find_phrases_in_documents_1", "wait_jobs_1"]
+            },
+            "next_workers": ["group_search_accuracy_1"]
+        },
+        {
+            "id": "group_search_accuracy_1",
+            "worker_type": "group_search_accuracy",
+            "next_workers": []
+        }
+    ]
+}

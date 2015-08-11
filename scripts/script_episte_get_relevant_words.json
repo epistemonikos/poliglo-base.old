@@ -1,0 +1,59 @@
+{
+    "id": "episte_get_relevant_words",
+    "name": "Epistemonikos get relevant words",
+    "start_worker_id": "get_epistemonikos_data_1",
+    "group": "epistemonikos",
+    "workers": [
+        {
+            "id": "get_epistemonikos_data_1",
+            "worker_type": "get_epistemonikos_data",
+            "default_inputs": {
+                "collection": "documents",
+                "fields": ["languages.en.title", "languages.en.abstract"],
+                "names": ["title", "abstract"]
+            },
+            "next_workers": ["tfidf_1"]
+        },
+        {
+            "id": "tfidf_1",
+            "worker_type": "tfidf",
+            "default_inputs": {
+                "fields": ["title", "abstract"],
+                "idf_file": "/tmp/idf.json"
+            },
+            "next_workers": ["bioportal_annotator_1"]
+        },
+        {
+            "id": "bioportal_annotator_1",
+            "worker_type": "bioportal_annotator",
+            "before": {
+                "select_inputs": {
+                    "title": "workers_output.get_epistemonikos_data_1.title",
+                    "abstract": "workers_output.get_epistemonikos_data_1.abstract"
+                }
+            },
+            "default_inputs": {
+                "fields": ["title", "abstract"]
+            },
+            "next_workers": ["wait_jobs_1"]
+        },
+        {
+            "id": "wait_jobs_1",
+            "worker_type": "wait_jobs",
+            "default_inputs": {
+                "wait_jobs_from": ["get_epistemonikos_data_1", "tfidf_1", "bioportal_annotator_1", "wait_jobs_1"]
+            },
+            "next_workers": ["group_tfidf_1"]
+        },
+        {
+            "id": "group_tfidf_1",
+            "worker_type": "group_tfidf",
+            "default_inputs": {
+                "tfidf_worker_id": "tfidf_1",
+                "bioportal_worker_id": "bioportal_annotator_1",
+                "bioporta_mesh_names_url": "https://poliglo.s3.amazonaws.com/new_mesh_2015.json"
+            },
+            "next_workers": []
+        }
+    ]
+}

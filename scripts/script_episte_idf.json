@@ -1,0 +1,30 @@
+{
+    "id": "episte_idf",
+    "name": "Epistemonikos idf",
+    "start_worker_id": "get_epistemonikos_data_1",
+    "group": "epistemonikos",
+    "workers": [
+        {
+            "id": "get_epistemonikos_data_1",
+            "worker_type": "get_epistemonikos_data",
+            "default_inputs": {
+                "data_filter": {},
+                "collection": "documents",
+                "fields": ["languages.en.title", "languages.en.abstract"],
+                "names": ["title", "abstract"],
+                "target_file": "/tmp/documents.tsv"
+            },
+            "next_workers": ["idf_1"]
+        },
+        {
+            "id": "idf_1",
+            "worker_type": "idf",
+            "default_inputs": {
+                "fields": ["title", "abstract"],
+                "input_file": "/tmp/documents.tsv",
+                "target_file": "/tmp/idf.json"
+            },
+            "next_workers": []
+        }
+    ]
+}
